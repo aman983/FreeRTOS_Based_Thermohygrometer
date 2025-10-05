@@ -23,9 +23,9 @@ The system is structured around four independent FreeRTOS tasks communicating vi
 
 | Task Name | Priority | Role | Update Frequency |
 | :--- | :--- | :--- | :--- |
-| **DHT\_Task** | `tskIDLE_PRIORITY+1` | Data Producer (Sensor Sampling) | Every $2$ seconds |
-| **Display\_task** | $6$ | UI Hub (Display/LED Control & Button Polling) | Every $100 \text{ ms}$ |
-| **Button\_Task** | `tskIDLE_PRIORITY+1` | UI Logic (Processes User Input) | Every $100 \text{ ms}$ |
+| **DHT Task** | `tskIDLE_PRIORITY+1` | Data Producer (Sensor Sampling) | Every $2$ seconds |
+| **Display task** | $6$ | UI Hub (Display/LED Control & Button Polling) | Every $100 \text{ ms}$ |
+| **Button Task** | `tskIDLE_PRIORITY+1` | UI Logic (Processes User Input) | Every $100 \text{ ms}$ |
 | **vLEDFlashTask** | `tskIDLE_PRIORITY` | System Heartbeat (Liveness Check) | Every $500 \text{ ms}$ |
 
 ### 🔄 Queue Communication
@@ -34,10 +34,10 @@ The design ensures non-blocking data exchange, centralizing all UI interaction t
 
 | Queue Name | Direction (Producer $\to$ Consumer) | Data Type | Purpose |
 | :--- | :--- | :--- | :--- |
-| `Display_Group1_Queue` | $\text{DHT\_Task} \to \text{Display\_task}$ | `float` | Temperature $(\text{}^{\circ}\text{C)}$ to be displayed on Segment Group 1. |
-| `Display_Group2_Queue` | $\text{DHT\_Task} \to \text{Display\_task}$ | `float` | Humidity $(\%)$ to be displayed on Segment Group 2. |
-| `Display_Led_Queue` | $\text{Button\_Task} \to \text{Display\_task}$ | `uint8_t` | Status counter/pattern to control the $\text{TM1638}$ **LEDs**. |
-| `Display_Button_Queue` | $\text{Display\_task} \rightleftarrows \text{Button\_Task}$ | `uint16_t` | Raw $\text{TM1638}$ **button state bitmap** (uses **`xQueueOverwrite`**). |
+| `Display_Group1_Queue` | $\text{DHT Task} \to \text{Display task}$ | `float` | Temperature $(\text{}^{\circ}\text{C)}$ to be displayed on Segment Group 1. |
+| `Display_Group2_Queue` | $\text{DHT Task} \to \text{Display task}$ | `float` | Humidity $(\%)$ to be displayed on Segment Group 2. |
+| `Display_Led_Queue` | $\text{Button Task} \to \text{Display task}$ | `uint8_t` | Status counter/pattern to control the $\text{TM1638}$ **LEDs**. |
+| `Display_Button_Queue` | $\text{Display task} \rightleftarrows \text{Button Task}$ | `uint16_t` | Raw $\text{TM1638}$ **button state bitmap** (uses **`xQueueOverwrite`**). |
 
 ---
 
@@ -50,20 +50,20 @@ The $\text{DHT22}$ requires precise microsecond timing, which is handled directl
 * **Host Start Signal:** $18 \text{ ms LOW}$ pulse followed by $40 \text{ µs HIGH}$ pulse.
 * **Data Read:** The code explicitly waits for the sensor's response handshake and then reads the $40$ bits of data.
 * **Bit Decoding:** Data bits are decoded by checking the line state $\sim 35 \text{ µs}$ into the $\text{HIGH}$ pulse duration. A short pulse is a '$\text{0}$', and a long pulse is a '$\text{1}$'.
-* **Error Handling:** Timeouts are implemented using a software counter (`timeout`) to prevent task blocking if the sensor fails to respond. The $\text{DHT\_Task}$ also uses $\text{UART}$ for logging read failures.
+* **Error Handling:** Timeouts are implemented using a software counter (`timeout`) to prevent task blocking if the sensor fails to respond. The $\text{DHT Task}$ also uses $\text{UART}$ for logging read failures.
 
 ### 2. TM1638 Display Driver (`Display_task`)
 
-The $\text{Display\_task}$ utilizes the bit-banged $\text{TM1638.h}$ driver to manage all aspects of the UI module via a 3-wire serial interface ($\text{STB}$, $\text{CLK}$, $\text{DIO}$).
+The $\text{Display task}$ utilizes the bit-banged $\text{TM1638.h}$ driver to manage all aspects of the UI module via a 3-wire serial interface ($\text{STB}$, $\text{CLK}$, $\text{DIO}$).
 
-* **Input Handling:** $\text{TM\_Button\_Read()}$ is polled every $100 \text{ ms}$. The result is immediately sent using `xQueueOverwrite()` to $\text{Display\_Button\_Queue}$, ensuring the $\text{Button\_Task}$ always receives the latest button state without accumulating stale events.
-* **Output Handling:** It acts as a consumer for all display/LED queues. It blocks for only $10$ ticks on each queue, ensuring it remains responsive even if a producer (like $\text{DHT\_Task}$) is delayed.
+* **Input Handling:** $\text{TM Button Read()}$ is polled every $100 \text{ ms}$. The result is immediately sent using `xQueueOverwrite()` to $\text{Display Button Queue}$, ensuring the $\text{Button Task}$ always receives the latest button state without accumulating stale events.
+* **Output Handling:** It acts as a consumer for all display/LED queues. It blocks for only $10$ ticks on each queue, ensuring it remains responsive even if a producer (like $\text{DHT Task}$) is delayed.
 
 | Segment Group | Data Source | Update Function |
 | :--- | :--- | :--- |
-| Group 1 (Left) | Temp $(\text{data}[1])$ from $\text{Display\_Group1\_Queue}$ | $\text{TM\_Display\_Float}(\text{temp}, 0)$ |
-| Group 2 (Right) | Hum $(\text{data}[0])$ from $\text{Display\_Group2\_Queue}$ | $\text{TM\_Display\_Float}(\text{hum}, 1)$ |
-| LEDs | Counter from $\text{Display\_Led\_Queue}$ | $\text{TM\_Display\_led}(\text{counter})$ |
+| Group 1 (Left) | Temp $(\text{data}[1])$ from $\text{Display Group1 Queue}$ | $\text{TM Display Float}(\text{temp}, 0)$ |
+| Group 2 (Right) | Hum $(\text{data}[0])$ from $\text{Display Group2 Queue}$ | $\text{TM Display Float}(\text{hum}, 1)$ |
+| LEDs | Counter from $\text{Display Led Queue}$ | $\text{TM Display led}(\text{counter})$ |
 
 ---
 
@@ -91,8 +91,8 @@ The $\text{Display\_task}$ utilizes the bit-banged $\text{TM1638.h}$ driver to m
 
 ### Execution Flow
 
-1.  **Initialization (`main`):** $\text{UART}$ and $\text{Display}$ initialization routines are called. $\text{Display\_init}$ is crucial as it creates all necessary FreeRTOS queues and the $\text{Display\_task}$.
-2.  **Task Creation:** All four tasks ($\text{vLEDFlashTask}$, $\text{Button\_Task}$, $\text{DHT\_Task}$, $\text{Display\_task}$) are created with their respective stack sizes and priorities.
+1.  **Initialization (`main`):** $\text{UART}$ and $\text{Display}$ initialization routines are called. $\text{Display init}$ is crucial as it creates all necessary FreeRTOS queues and the $\text{Display task}$.
+2.  **Task Creation:** All four tasks ($\text{vLEDFlashTask}$, $\text{Button Task}$, $\text{DHT Task}$, $\text{Display task}$) are created with their respective stack sizes and priorities.
 3.  **Scheduler Start:** `vTaskStartScheduler()` begins cooperative multitasking.
 
 ### Compilation and Flashing
