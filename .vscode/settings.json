@@ -1,0 +1,9 @@
+{
+    "files.associations": {
+        "task.h": "c",
+        "tasks.h": "c",
+        "freertos.h": "c",
+        "ring_buffer.h": "c",
+        "display.h": "c"
+    }
+}
